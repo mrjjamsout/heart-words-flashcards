@@ -302,6 +302,91 @@ button:focus-visible {
 }
 .btn-next { font-size: 1.3rem; padding: 16px 40px; min-height: 64px; background: var(--green); }
 
+/* STAR RAIL — floating word-progress column in the play screen's top-right
+   corner, below the topbar icons. Absolutely positioned against #screen-play
+   (given position:relative below) so it never enters document flow: it
+   cannot be pushed or resized by word length, decoy count, or screen width,
+   and it cannot push the letter bank either. Sized well under the topbar
+   icons and packed tight so a 10+ star column clears the letter-slots area
+   even on a short phone. */
+#screen-play { position: relative; }
+/* A grid, not a single flex column: a fixed row cap means the rail's HEIGHT
+   never grows past a set budget no matter how many stars a set has — extra
+   stars wrap into a new column growing toward screen-center instead of
+   downward, which is what keeps a 10+ star rail from ever reaching down as
+   far as the sentence button/letter bank on a short phone. Anchored by
+   right:0 with no fixed width, so added columns grow leftward, away from the
+   corner, rather than pushing off the right edge. */
+.star-rail {
+  position: absolute;
+  top: 66px;
+  right: 0;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(6, auto);
+  grid-auto-columns: max-content;
+  justify-items: center;
+  column-gap: 4px;
+  row-gap: 2px;
+  z-index: 5;
+}
+.star {
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  font-size: 15px;
+  text-align: center;
+  color: #E4DCC7;
+  position: relative;
+  user-select: none;
+  transition: color .15s ease;
+}
+.star.filled {
+  color: var(--yellow);
+  cursor: pointer;
+}
+.star.pop { animation: star-pop .45s ease; }
+@keyframes star-pop {
+  0%   { transform: scale(0.3) rotate(-15deg); }
+  55%  { transform: scale(1.4) rotate(8deg); }
+  75%  { transform: scale(0.9) rotate(-4deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+/* Sparkle: tiny dots spawned around a star on earn (and on re-tap of an
+   already-earned star), flying outward and fading. Purely decorative,
+   removed from the DOM on animationend. */
+.star-sparkle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--yellow);
+  pointer-events: none;
+  animation: star-sparkle-fly .5s ease-out forwards;
+}
+@keyframes star-sparkle-fly {
+  0%   { opacity: 1; transform: translate(-50%, -50%) scale(1) translate(0, 0); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(0.4) translate(var(--dx), var(--dy)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .star.pop { animation: none; }
+  .star-sparkle { display: none; }
+}
+
+/* Fireworks finale — a full-viewport canvas overlay, hand-drawn particles
+   only (no library). Non-interactive so it never blocks the "Back to Sets"
+   button or anything else underneath it. */
+.fireworks-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 9999;
+}
+
 /* COMPLETE */
 .complete-box {
   margin: auto;
@@ -329,6 +414,11 @@ button:focus-visible {
   .letter-bank { margin: 8px 0 12px; gap: 14px; }
   .letter-tile { width: 66px; height: 66px; font-size: 2rem; }
   .play-footer { padding-top: 20px; gap: 16px; }
+  /* Tighter still on a phone, and one row shorter, so a full 10-star rail
+     has no chance of reaching down into the sentence-button/letter-bank
+     area on a short screen. */
+  .star-rail { top: 60px; grid-template-rows: repeat(5, auto); column-gap: 3px; row-gap: 1px; }
+  .star { width: 14px; height: 14px; line-height: 14px; font-size: 12px; }
   /* Full-width sentence CTA and Next button: the biggest possible target for
      small hands, and full-bleed keeps the sentence button unmissable. */
   .sentence-cta { width: 100%; }
@@ -369,6 +459,10 @@ button:focus-visible {
   .btn-icon { width: 64px; height: 64px; min-height: 64px; font-size: 1.7rem; }
   .btn-next { font-size: 1.5rem; padding: 18px 48px; min-height: 70px; }
   .set-card { font-size: 1.7rem; min-height: 96px; }
+  /* Topbar icons grow to 64px here, so drop the rail down to clear them.
+     More vertical room on a big screen affords one extra row. */
+  .star-rail { top: 72px; grid-template-rows: repeat(7, auto); column-gap: 6px; row-gap: 4px; }
+  .star { width: 22px; height: 22px; line-height: 22px; font-size: 19px; }
 }
 </style>
 
@@ -388,6 +482,8 @@ button:focus-visible {
       <div id="play-progress" class="play-progress"></div>
       <button id="btn-replay" class="btn btn-icon" title="Hear it again">🔊</button>
     </div>
+
+    <div id="star-rail" class="star-rail"></div>
 
     <div id="letter-slots" class="letter-slots"></div>
 
@@ -411,6 +507,8 @@ button:focus-visible {
       <button id="btn-complete-home" class="btn btn-primary">Back to Sets</button>
     </div>
   </section>
+
+  <canvas id="fireworks-canvas" class="fireworks-canvas hidden"></canvas>
 
 </div>
 
@@ -897,6 +995,165 @@ const elLetterBank = document.getElementById('letter-bank');
 const elBtnNext = document.getElementById('btn-next');
 const elPlayProgress = document.getElementById('play-progress');
 const elBtnSentence = document.getElementById('btn-sentence');
+const elStarRail = document.getElementById('star-rail');
+const elFireworks = document.getElementById('fireworks-canvas');
+
+function prefersReducedMotion() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+/* ============================== Star rail ==============================
+   Purely visual, session-only progress UI: one star per word in the current
+   set, filled in order as each word is spelled correctly. No persistence —
+   startPlay() rebuilds it from scratch on every visit, matching the
+   shuffle-every-visit behaviour already there. Entirely independent of the
+   audio/token system above: nothing here awaits, cancels, or gates on
+   sayToken/cancelSpeech, so it cannot interfere with word playback. */
+function renderStarRail(count) {
+  elStarRail.innerHTML = '';
+  for (let i = 0; i < count; i++) {
+    const star = document.createElement('span');
+    star.className = 'star';
+    star.textContent = '★';
+    star.dataset.index = String(i);
+    star.addEventListener('click', () => onStarTap(star));
+    elStarRail.appendChild(star);
+  }
+}
+
+/* Small burst of dots flying outward from a star, removed on animationend.
+   Used both when a star is newly earned and when an already-earned star is
+   tapped again (the "bonus interaction"). Skipped under reduced motion. */
+function spawnSparkle(star) {
+  if (prefersReducedMotion()) return;
+  const count = 6;
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i) / count + Math.random() * 0.4;
+    const dist = 13 + Math.random() * 6;
+    const dx = Math.cos(angle) * dist;
+    const dy = Math.sin(angle) * dist;
+    const dot = document.createElement('span');
+    dot.className = 'star-sparkle';
+    dot.style.setProperty('--dx', dx.toFixed(1) + 'px');
+    dot.style.setProperty('--dy', dy.toFixed(1) + 'px');
+    star.appendChild(dot);
+    dot.addEventListener('animationend', () => dot.remove(), { once: true });
+  }
+}
+
+/* Fill the next empty star, top to bottom. Returns true when the star just
+   filled was the LAST one in the rail (i.e. the set's final word), so the
+   caller knows a finale is due. A no-op (returns false) if every star is
+   already filled — defensive only, should not happen in normal play. */
+function fillNextStar() {
+  const stars = elStarRail.children;
+  for (let i = 0; i < stars.length; i++) {
+    const star = stars[i];
+    if (star.classList.contains('filled')) continue;
+    star.classList.add('filled');
+    if (!prefersReducedMotion()) {
+      star.classList.remove('pop');
+      void star.offsetWidth; // force reflow so the animation restarts cleanly
+      star.classList.add('pop');
+      spawnSparkle(star);
+    }
+    return i === stars.length - 1;
+  }
+  return false;
+}
+
+/* Bonus interaction: tapping an already-earned star just replays the
+   sparkle for fun. Tapping an unfilled star does nothing — there is nothing
+   to celebrate yet. Not tied to audio in any way. */
+function onStarTap(star) {
+  if (!star.classList.contains('filled')) return;
+  spawnSparkle(star);
+}
+
+/* ============================== Fireworks finale ==============================
+   Hand-rolled Canvas 2D particle burst, no external library. Runs as an
+   overlay on top of whichever screen is showing when it's called (here,
+   right as the complete screen is reached) and cleans up after itself.
+   Skipped entirely under prefers-reduced-motion, per the same pattern the
+   sentence-button attention pulse already uses. */
+function runFireworks() {
+  if (prefersReducedMotion()) return;
+  const canvas = elFireworks;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+
+  function resize() {
+    canvas.width = Math.round(window.innerWidth * dpr);
+    canvas.height = Math.round(window.innerHeight * dpr);
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  canvas.classList.remove('hidden');
+  window.addEventListener('resize', resize);
+
+  const colors = ['#FF7F7F', '#FFD166', '#4CD787', '#4EC5C1', '#FF4FA0', '#FFFFFF'];
+  let particles = [];
+
+  function spawnBurst() {
+    const x = window.innerWidth * (0.18 + Math.random() * 0.64);
+    const y = window.innerHeight * (0.16 + Math.random() * 0.34);
+    const count = 26 + Math.floor(Math.random() * 14);
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.3;
+      const speed = 2 + Math.random() * 3.5;
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        decay: 0.012 + Math.random() * 0.01,
+        color: Math.random() < 0.25 ? colors[Math.floor(Math.random() * colors.length)] : color,
+        radius: 2 + Math.random() * 2
+      });
+    }
+  }
+
+  const burstOffsets = [0, 350, 700, 1150, 1600];
+  const startTime = performance.now();
+  let burstsSpawned = 0;
+  const DURATION = 3200; // ms the whole show runs for
+
+  function frame(now) {
+    const elapsed = now - startTime;
+    while (burstsSpawned < burstOffsets.length && elapsed >= burstOffsets[burstsSpawned]) {
+      spawnBurst();
+      burstsSpawned++;
+    }
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    particles.forEach(p => {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.05; // gravity
+      p.life -= p.decay;
+      if (p.life > 0) {
+        ctx.globalAlpha = Math.max(p.life, 0);
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+    ctx.globalAlpha = 1;
+    particles = particles.filter(p => p.life > 0);
+
+    if (elapsed < DURATION || particles.length > 0) {
+      requestAnimationFrame(frame);
+    } else {
+      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      canvas.classList.add('hidden');
+      window.removeEventListener('resize', resize);
+    }
+  }
+  requestAnimationFrame(frame);
+}
 
 /* Fire the subtle one-time "notice me" pulse (CSS handles the actual
    animation, including honouring prefers-reduced-motion). Removing then
@@ -917,6 +1174,7 @@ function startPlay(set) {
   // copies, so set.words is left untouched.
   playState.words = shuffle(set.words);
   playState.index = 0;
+  renderStarRail(set.words.length); // fresh, all-empty rail every session
   showScreen('play');
   renderCard();
 }
@@ -1000,6 +1258,9 @@ function onTileClick(tile, btn) {
       // instant the next card's audio (or another cancelSpeech()) starts.
       const celebrationToken = ++sayToken;
       playRandomCelebration(celebrationToken);
+      // Pure visual reaction, independent of the audio above: fills the next
+      // star and pops/sparkles it. Never awaits, never touches sayToken.
+      fillNextStar();
     }
   } else {
     // Wrong: gentle rejection cue
@@ -1032,6 +1293,10 @@ elBtnNext.addEventListener('click', () => {
     cancelSpeech();
     document.getElementById('complete-setname').textContent = `You finished "${playState.set.name}"!`;
     showScreen('complete');
+    // The final star was just earned to reach here — fire the finale exactly
+    // once, timed to the "Great job!" reveal. Purely visual; does not touch
+    // audio in any way.
+    runFireworks();
   } else {
     renderCard();
   }
