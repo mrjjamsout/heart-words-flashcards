@@ -222,13 +222,17 @@ button:focus-visible {
   .btn-sentence.attention { animation: none; }
 }
 
-/* Extra top margin now that the emoji visual no longer occupies this space. */
+/* Extra top margin now that the emoji visual no longer occupies this space.
+   44px (rather than the rail's own footprint) also keeps a clear few pixels
+   between the bottom of the now-5-across star rail and the top of the
+   letter slots at this breakpoint — re-verified with getBoundingClientRect
+   alongside the star-rail change below. */
 .letter-slots {
   display: flex;
   justify-content: center;
   flex-wrap: wrap;
   gap: 12px;
-  margin: 40px 0 6px;
+  margin: 44px 0 6px;
 }
 .letter-slot {
   width: 64px;
@@ -310,24 +314,22 @@ button:focus-visible {
    icons and packed tight so a 10+ star column clears the letter-slots area
    even on a short phone. */
 #screen-play { position: relative; }
-/* A grid, not a single flex column: a fixed row cap means the rail's HEIGHT
-   never grows past a set budget no matter how many stars a set has — extra
-   stars wrap into a new column growing toward screen-center instead of
-   downward, which is what keeps a 10+ star rail from ever reaching down as
-   far as the sentence button/letter bank on a short phone. Anchored by
-   right:0 with no fixed width, so added columns grow leftward, away from the
-   corner, rather than pushing off the right edge. */
+/* A fixed 5-column grid, row-major (the default grid-auto-flow: row): stars
+   fill left-to-right, 5 per row, then wrap to a new row beneath — a clean
+   5-wide block for the common 10-word set. Anchored by right:0 with a fixed
+   column count (so width never changes as stars are earned/added); height
+   grows downward instead as a set exceeds 5 words, which is why the star and
+   gap sizes below are kept small enough that even a couple of extra rows
+   still clears the letter-slots/sentence-button/letter-bank area. */
 .star-rail {
   position: absolute;
   top: 66px;
   right: 0;
   display: grid;
-  grid-auto-flow: column;
-  grid-template-rows: repeat(6, auto);
-  grid-auto-columns: max-content;
+  grid-template-columns: repeat(5, 18px);
   justify-items: center;
   column-gap: 4px;
-  row-gap: 2px;
+  row-gap: 3px;
   z-index: 5;
 }
 .star {
@@ -407,18 +409,22 @@ button:focus-visible {
   :root { font-size: 17px; }
   #app { padding: 16px 20px 32px; }
   .app-title { font-size: 2rem; }
-  .letter-slots { margin: 18px 0 6px; gap: 10px; }
+  /* margin-top nudged up 6px from the pre-5-across value so the letter
+     slots clear the wider star rail below — re-verified with
+     getBoundingClientRect (see the star-rail rule below). */
+  .letter-slots { margin: 24px 0 6px; gap: 10px; }
   .letter-slot { width: 58px; height: 70px; font-size: 2rem; }
   .sentence-cta { margin: 4px 0 10px; }
   .btn-sentence { font-size: 1.15rem; padding: 14px 20px; min-height: 62px; }
   .letter-bank { margin: 8px 0 12px; gap: 14px; }
   .letter-tile { width: 66px; height: 66px; font-size: 2rem; }
   .play-footer { padding-top: 20px; gap: 16px; }
-  /* Tighter still on a phone, and one row shorter, so a full 10-star rail
-     has no chance of reaching down into the sentence-button/letter-bank
-     area on a short screen. */
-  .star-rail { top: 60px; grid-template-rows: repeat(5, auto); column-gap: 3px; row-gap: 1px; }
-  .star { width: 14px; height: 14px; line-height: 14px; font-size: 12px; }
+  /* Tighter still on a phone: smaller stars and gaps keep the 5-across rail
+     narrow enough to clear the topbar icons and short enough (row-major, so
+     a 10-star rail is just 2 rows) that it never reaches down into the
+     sentence-button/letter-bank area on a short screen. */
+  .star-rail { top: 58px; grid-template-columns: repeat(5, 13px); column-gap: 3px; row-gap: 2px; }
+  .star { width: 13px; height: 13px; line-height: 13px; font-size: 11px; }
   /* Full-width sentence CTA and Next button: the biggest possible target for
      small hands, and full-bleed keeps the sentence button unmissable. */
   .sentence-cta { width: 100%; }
@@ -437,7 +443,13 @@ button:focus-visible {
      them is traded back in — otherwise the Next button drops below the fold
      on a 720px-tall laptop screen. */
   #app { padding-bottom: 24px; }
-  .letter-slots { gap: 20px; margin: 20px 0 6px; }
+  /* margin-top raised from 20px so the letter slots clear the 5-across star
+     rail (now taller here since it wraps into rows instead of columns) —
+     re-verified with getBoundingClientRect. The rail's own star size below
+     was trimmed back to the base 18px (from 22px) specifically to keep this
+     increase modest, since the desktop "Next button below the fold" margin
+     mentioned above is still a live constraint. */
+  .letter-slots { gap: 20px; margin: 44px 0 6px; }
   .letter-slot {
     width: 104px;
     height: 124px;
@@ -460,9 +472,12 @@ button:focus-visible {
   .btn-next { font-size: 1.5rem; padding: 18px 48px; min-height: 70px; }
   .set-card { font-size: 1.7rem; min-height: 96px; }
   /* Topbar icons grow to 64px here, so drop the rail down to clear them.
-     More vertical room on a big screen affords one extra row. */
-  .star-rail { top: 72px; grid-template-rows: repeat(7, auto); column-gap: 6px; row-gap: 4px; }
-  .star { width: 22px; height: 22px; line-height: 22px; font-size: 19px; }
+     Star size dialled back to the base 18px (rather than scaling up with
+     the rest of the desktop UI) so the now 5-wide/2-tall rail stays short
+     enough that only a modest bump to .letter-slots margin-top (above) is
+     needed to keep it clear of the letter slots. */
+  .star-rail { top: 72px; grid-template-columns: repeat(5, 18px); column-gap: 5px; row-gap: 3px; }
+  .star { width: 18px; height: 18px; line-height: 18px; font-size: 15px; }
 }
 </style>
 
@@ -871,18 +886,42 @@ function playTone(freq, startTime, duration, ctx, type = 'sine', gainPeak = 0.22
   osc.stop(startTime + duration + 0.02);
 }
 
-function playChime() {
+/* Major-pentatonic step pattern used to transpose the chime upward across a
+   session (see playChime below): [0,2,4,7,9] semitones for words 0-4, the
+   same shape +12 semitones (one octave) for words 5-9, +24 for 10-14, and so
+   on — always a consonant interval, never dissonant, no matter how far a set
+   climbs. */
+const CHIME_PENTATONIC_STEPS = [0, 2, 4, 7, 9];
+function chimeSemitoneOffset(wordIndex) {
+  const i = Math.max(0, wordIndex | 0);
+  const step = i % CHIME_PENTATONIC_STEPS.length;
+  const octave = Math.floor(i / CHIME_PENTATONIC_STEPS.length);
+  return CHIME_PENTATONIC_STEPS[step] + octave * 12;
+}
+
+/* wordIndex is the CURRENT word's position (playState.index) within the
+   session's word set. wordIndex 0 plays at today's original, unmodified
+   pitch; each later word transposes the ENTIRE flourish (arpeggio + tail) up
+   by one pentatonic step via a frequency multiplier, so the melodic shape is
+   identical every time — only the pitch center rises, evoking a
+   Shepard-tone-like "it keeps climbing" feeling across the set. Resets
+   naturally every session because playState.index resets to 0 in
+   startPlay(). */
+function playChime(wordIndex) {
   try {
     const ctx = getAudioCtx();
     if (ctx.state === 'suspended') ctx.resume();
     const now = ctx.currentTime;
+    const semitones = chimeSemitoneOffset(wordIndex);
+    const mult = Math.pow(2, semitones / 12);
+
     // Cheerful "ta-da!" flourish: quick ascending arpeggio (C5-E5-G5-C6)
     // followed by a short playful wiggle + pitch-bend finish. Whole thing
     // finishes well under 0.8s so "Next" appears promptly.
     const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
     const gap = 0.09;
     notes.forEach((freq, i) => {
-      playTone(freq, now + i * gap, 0.11, ctx, 'triangle', 0.25);
+      playTone(freq * mult, now + i * gap, 0.11, ctx, 'triangle', 0.25);
     });
 
     // Playful finishing note: a quick wiggle (mini vibrato) then a rising
@@ -891,10 +930,10 @@ function playChime() {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(1046.5, tailStart);        // C6
-    osc.frequency.linearRampToValueAtTime(1108.73, tailStart + 0.05); // wiggle up to C#6
-    osc.frequency.linearRampToValueAtTime(1046.5, tailStart + 0.09);  // back to C6
-    osc.frequency.exponentialRampToValueAtTime(1318.51, tailStart + 0.22); // bend up to E6
+    osc.frequency.setValueAtTime(1046.5 * mult, tailStart);        // C6
+    osc.frequency.linearRampToValueAtTime(1108.73 * mult, tailStart + 0.05); // wiggle up to C#6
+    osc.frequency.linearRampToValueAtTime(1046.5 * mult, tailStart + 0.09);  // back to C6
+    osc.frequency.exponentialRampToValueAtTime(1318.51 * mult, tailStart + 0.22); // bend up to E6
     gain.gain.setValueAtTime(0.0001, tailStart);
     gain.gain.exponentialRampToValueAtTime(0.28, tailStart + 0.03);
     gain.gain.exponentialRampToValueAtTime(0.0001, tailStart + 0.24);
@@ -1250,7 +1289,7 @@ function onTileClick(tile, btn) {
       // finished spelling before it wrapped up) so only the chime plays — the
       // word is not spoken again on completion.
       cancelSpeech();
-      playChime();
+      playChime(playState.index);
       elBtnNext.classList.remove('hidden');
       // Additive, not a replacement: the chime always plays; a random
       // celebration clip (if any are baked in) overlaps it. Mints its own
@@ -1261,6 +1300,14 @@ function onTileClick(tile, btn) {
       // Pure visual reaction, independent of the audio above: fills the next
       // star and pops/sparkles it. Never awaits, never touches sayToken.
       fillNextStar();
+      // Fire the fireworks finale the instant the LAST word of the set is
+      // completed — right alongside the chime — rather than waiting for the
+      // player to tap "Next" afterward. Checked against the CURRENT index
+      // before it advances, since playState.index still refers to the word
+      // just finished at this point.
+      if (playState.index === playState.words.length - 1) {
+        runFireworks();
+      }
     }
   } else {
     // Wrong: gentle rejection cue
@@ -1293,10 +1340,9 @@ elBtnNext.addEventListener('click', () => {
     cancelSpeech();
     document.getElementById('complete-setname').textContent = `You finished "${playState.set.name}"!`;
     showScreen('complete');
-    // The final star was just earned to reach here — fire the finale exactly
-    // once, timed to the "Great job!" reveal. Purely visual; does not touch
-    // audio in any way.
-    runFireworks();
+    // The fireworks finale now fires earlier, in onTileClick, the instant the
+    // last word's final letter lands — not here. Nothing to trigger on this
+    // transition any more; it's purely a screen change.
   } else {
     renderCard();
   }
