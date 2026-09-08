@@ -915,25 +915,30 @@ function playChime(wordIndex) {
     const semitones = chimeSemitoneOffset(wordIndex);
     const mult = Math.pow(2, semitones / 12);
 
-    // Cheerful "ta-da!" flourish: quick ascending arpeggio (C5-E5-G5-C6)
+    // Cheerful "ta-da!" flourish: quick ascending arpeggio (C4-E4-G4-C5)
     // followed by a short playful wiggle + pitch-bend finish. Whole thing
     // finishes well under 0.8s so "Next" appears promptly.
-    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+    // Shifted a full octave down from the original C5-E5-G5-C6 base (per
+    // real-user feedback that the high end of the climb got piercing on
+    // phone speakers) — same ascending pentatonic-step climb via `mult`,
+    // just centered an octave lower so word 9's peak lands ~1750-2200Hz
+    // instead of ~3500-4400Hz.
+    const notes = [261.63, 329.63, 392.00, 523.25]; // C4, E4, G4, C5
     const gap = 0.09;
     notes.forEach((freq, i) => {
       playTone(freq * mult, now + i * gap, 0.11, ctx, 'triangle', 0.25);
     });
 
     // Playful finishing note: a quick wiggle (mini vibrato) then a rising
-    // pitch bend, like a little "...ta-DAA!" tail.
+    // pitch bend, like a little "...ta-DAA!" tail. Same octave-down shift.
     const tailStart = now + notes.length * gap;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(1046.5 * mult, tailStart);        // C6
-    osc.frequency.linearRampToValueAtTime(1108.73 * mult, tailStart + 0.05); // wiggle up to C#6
-    osc.frequency.linearRampToValueAtTime(1046.5 * mult, tailStart + 0.09);  // back to C6
-    osc.frequency.exponentialRampToValueAtTime(1318.51 * mult, tailStart + 0.22); // bend up to E6
+    osc.frequency.setValueAtTime(523.25 * mult, tailStart);        // C5
+    osc.frequency.linearRampToValueAtTime(554.37 * mult, tailStart + 0.05); // wiggle up to C#5
+    osc.frequency.linearRampToValueAtTime(523.25 * mult, tailStart + 0.09);  // back to C5
+    osc.frequency.exponentialRampToValueAtTime(659.25 * mult, tailStart + 0.22); // bend up to E5
     gain.gain.setValueAtTime(0.0001, tailStart);
     gain.gain.exponentialRampToValueAtTime(0.28, tailStart + 0.03);
     gain.gain.exponentialRampToValueAtTime(0.0001, tailStart + 0.24);
@@ -1016,7 +1021,7 @@ function renderHome() {
 
 /* Every screen change silences audio: leaving a card must never leave its
    word still queued up to play over whatever comes next. */
-document.getElementById('btn-play-home').addEventListener('click', () => { cancelSpeech(); renderHome(); });
+document.getElementById('btn-play-home').addEventListener('click', () => { cancelSpeech(); clearPendingCompleteTransition(); renderHome(); });
 document.getElementById('btn-complete-home').addEventListener('click', () => { cancelSpeech(); renderHome(); });
 
 /* ============================== Play screen ============================== */
@@ -1036,6 +1041,21 @@ const elPlayProgress = document.getElementById('play-progress');
 const elBtnSentence = document.getElementById('btn-sentence');
 const elStarRail = document.getElementById('star-rail');
 const elFireworks = document.getElementById('fireworks-canvas');
+
+/* Pending auto-advance to the complete screen, armed the instant the LAST
+   word of a set is completed (see onTileClick) so the celebration doesn't
+   strand the player waiting on a manual "Next" tap. Cancellable: cleared
+   whenever Next is clicked manually (so there is never a double transition)
+   and whenever a new card is rendered or the player leaves the play screen
+   some other way (e.g. tapping home), so a stray timer never fires a
+   transition onto a screen that isn't the one it was meant for. */
+let completeTransitionTimeoutId = null;
+function clearPendingCompleteTransition() {
+  if (completeTransitionTimeoutId !== null) {
+    clearTimeout(completeTransitionTimeoutId);
+    completeTransitionTimeoutId = null;
+  }
+}
 
 function prefersReducedMotion() {
   return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -1218,10 +1238,22 @@ function startPlay(set) {
   renderCard();
 }
 
+/* Shared by the manual Next-button handler and the automatic post-last-word
+   transition below, so both paths land on the exact same screen change. */
+function showCompleteScreen() {
+  cancelSpeech();
+  document.getElementById('complete-setname').textContent = `You finished "${playState.set.name}"!`;
+  showScreen('complete');
+}
+
 function renderCard() {
   // Stop anything left over from the previous card (in-progress audio and/or a
   // pending "say it twice" timer) before this card's audio starts.
   cancelSpeech();
+  // A new card is starting — any pending auto-transition to the complete
+  // screen from a previous card can no longer apply (defensive: normally
+  // already cleared by whatever navigated here).
+  clearPendingCompleteTransition();
 
   const word = playState.words[playState.index];
   playState.currentWord = word;
@@ -1307,6 +1339,19 @@ function onTileClick(tile, btn) {
       // just finished at this point.
       if (playState.index === playState.words.length - 1) {
         runFireworks();
+        // Auto-advance to the complete screen after a short pause — enough
+        // time to hear the chime and see the fireworks burst start, without
+        // stranding the player waiting on a manual tap. The fireworks canvas
+        // is a fixed, high-z-index overlay independent of which screen is
+        // showing beneath it, so it keeps animating uninterrupted straight
+        // through this transition. "Next" stays live as a manual override —
+        // its own handler clears this timer, so whichever fires first wins
+        // and there is never a double transition.
+        completeTransitionTimeoutId = setTimeout(() => {
+          completeTransitionTimeoutId = null;
+          playState.index++;
+          showCompleteScreen();
+        }, 1300);
       }
     }
   } else {
@@ -1335,11 +1380,13 @@ elBtnSentence.addEventListener('click', () => {
 });
 
 elBtnNext.addEventListener('click', () => {
+  // Manual override: if the auto-transition (armed in onTileClick after the
+  // last word) hasn't fired yet, cancel it so it can't also fire later and
+  // double-transition — this tap wins and does it right now instead.
+  clearPendingCompleteTransition();
   playState.index++;
   if (playState.index >= playState.words.length) {
-    cancelSpeech();
-    document.getElementById('complete-setname').textContent = `You finished "${playState.set.name}"!`;
-    showScreen('complete');
+    showCompleteScreen();
     // The fireworks finale now fires earlier, in onTileClick, the instant the
     // last word's final letter lands — not here. Nothing to trigger on this
     // transition any more; it's purely a screen change.
