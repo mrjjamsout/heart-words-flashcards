@@ -886,59 +886,30 @@ function playTone(freq, startTime, duration, ctx, type = 'sine', gainPeak = 0.22
   osc.stop(startTime + duration + 0.02);
 }
 
-/* Major-pentatonic step pattern used to transpose the chime upward across a
-   session (see playChime below): [0,2,4,7,9] semitones for words 0-4, the
-   same shape +12 semitones (one octave) for words 5-9, +24 for 10-14, and so
-   on — always a consonant interval, never dissonant, no matter how far a set
-   climbs. */
-const CHIME_PENTATONIC_STEPS = [0, 2, 4, 7, 9];
-function chimeSemitoneOffset(wordIndex) {
-  const i = Math.max(0, wordIndex | 0);
-  const step = i % CHIME_PENTATONIC_STEPS.length;
-  const octave = Math.floor(i / CHIME_PENTATONIC_STEPS.length);
-  return CHIME_PENTATONIC_STEPS[step] + octave * 12;
-}
-
-/* wordIndex is the CURRENT word's position (playState.index) within the
-   session's word set. wordIndex 0 plays at today's original, unmodified
-   pitch; each later word transposes the ENTIRE flourish (arpeggio + tail) up
-   by one pentatonic step via a frequency multiplier, so the melodic shape is
-   identical every time — only the pitch center rises, evoking a
-   Shepard-tone-like "it keeps climbing" feeling across the set. Resets
-   naturally every session because playState.index resets to 0 in
-   startPlay(). */
-function playChime(wordIndex) {
+function playChime() {
   try {
     const ctx = getAudioCtx();
     if (ctx.state === 'suspended') ctx.resume();
     const now = ctx.currentTime;
-    const semitones = chimeSemitoneOffset(wordIndex);
-    const mult = Math.pow(2, semitones / 12);
-
-    // Cheerful "ta-da!" flourish: quick ascending arpeggio (C4-E4-G4-C5)
+    // Cheerful "ta-da!" flourish: quick ascending arpeggio (C5-E5-G5-C6)
     // followed by a short playful wiggle + pitch-bend finish. Whole thing
     // finishes well under 0.8s so "Next" appears promptly.
-    // Shifted a full octave down from the original C5-E5-G5-C6 base (per
-    // real-user feedback that the high end of the climb got piercing on
-    // phone speakers) — same ascending pentatonic-step climb via `mult`,
-    // just centered an octave lower so word 9's peak lands ~1750-2200Hz
-    // instead of ~3500-4400Hz.
-    const notes = [261.63, 329.63, 392.00, 523.25]; // C4, E4, G4, C5
+    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
     const gap = 0.09;
     notes.forEach((freq, i) => {
-      playTone(freq * mult, now + i * gap, 0.11, ctx, 'triangle', 0.25);
+      playTone(freq, now + i * gap, 0.11, ctx, 'triangle', 0.25);
     });
 
     // Playful finishing note: a quick wiggle (mini vibrato) then a rising
-    // pitch bend, like a little "...ta-DAA!" tail. Same octave-down shift.
+    // pitch bend, like a little "...ta-DAA!" tail.
     const tailStart = now + notes.length * gap;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(523.25 * mult, tailStart);        // C5
-    osc.frequency.linearRampToValueAtTime(554.37 * mult, tailStart + 0.05); // wiggle up to C#5
-    osc.frequency.linearRampToValueAtTime(523.25 * mult, tailStart + 0.09);  // back to C5
-    osc.frequency.exponentialRampToValueAtTime(659.25 * mult, tailStart + 0.22); // bend up to E5
+    osc.frequency.setValueAtTime(1046.5, tailStart);        // C6
+    osc.frequency.linearRampToValueAtTime(1108.73, tailStart + 0.05); // wiggle up to C#6
+    osc.frequency.linearRampToValueAtTime(1046.5, tailStart + 0.09);  // back to C6
+    osc.frequency.exponentialRampToValueAtTime(1318.51, tailStart + 0.22); // bend up to E6
     gain.gain.setValueAtTime(0.0001, tailStart);
     gain.gain.exponentialRampToValueAtTime(0.28, tailStart + 0.03);
     gain.gain.exponentialRampToValueAtTime(0.0001, tailStart + 0.24);
@@ -1321,7 +1292,7 @@ function onTileClick(tile, btn) {
       // finished spelling before it wrapped up) so only the chime plays — the
       // word is not spoken again on completion.
       cancelSpeech();
-      playChime(playState.index);
+      playChime();
       elBtnNext.classList.remove('hidden');
       // Additive, not a replacement: the chime always plays; a random
       // celebration clip (if any are baked in) overlaps it. Mints its own
